@@ -41,26 +41,17 @@ def get_gemini_response(image_data, mime_type, prompt):
     return response.text
 
 # Function to analyze the nutritional data
-def analyze_nutrition(text):
-    calories = re.search(r"(\d+)\s*calories", text, re.IGNORECASE)
-    sugar = re.search(r"(\d+)\s*g\s*sugar", text, re.IGNORECASE)
-    fat = re.search(r"(\d+)%\s*saturated\s*fat", text, re.IGNORECASE)
-
-    calories = int(calories.group(1)) if calories else 0
-    sugar = int(sugar.group(1)) if sugar else 0
-    fat = int(fat.group(1)) if fat else 0
-
-    is_healthy = (
-        calories <= CALORIE_THRESHOLD
-        and sugar <= SUGAR_THRESHOLD
-        and fat <= SATURATED_FAT_THRESHOLD
-    )
-
+def analyze_nutrition(extracted_text):
+    # Extract relevant information
+    calories = float(re.search(r"Calories: (\d+)", extracted_text).group(1))
+    sugar = float(re.search(r"Sugar: (\d+)", extracted_text).group(1))
+    saturated_fat = float(re.search(r"Saturated Fat: (\d+)", extracted_text).group(1))
+    is_healthy = calories <= CALORIE_THRESHOLD and sugar <= SUGAR_THRESHOLD and saturated_fat <= SATURATED_FAT_THRESHOLD
     return {
         "calories": calories,
         "sugar": sugar,
-        "saturated_fat": fat,
-        "is_healthy": is_healthy,
+        "saturated_fat": saturated_fat,
+        "is_healthy": is_healthy
     }
 
 # Streamlit App Configuration
@@ -76,10 +67,12 @@ submit = st.button("Analyze")
 
 input_prompt = """
 You are an expert in nutrition and text analysis. Extract the nutritional information (calories, sugars, fats, etc.) from the provided food ingredient label image. Include the following details in the response:
-Calories:
-Sugar:
-Saturated Fat:
-Health Status:
+\nCalories:
+\nSugar:
+\nSaturated Fat:
+Health Status:Healthy ✅ or Unhealthy ❌
+Only give the information about calories, sugar, saturated fat, and health status. Strictly DO NOT include any other information.
+
 """
 
 if submit:
@@ -91,7 +84,6 @@ if submit:
 
                 # Get response from Google Gemini API
                 extracted_text = get_gemini_response(image_data.getvalue(), mime_type, input_prompt)
-                st.write(f"Extracted Text:{extracted_text}")
                 # Analyze nutrition
                 results = analyze_nutrition(extracted_text)
 
