@@ -1,178 +1,121 @@
+import yaml
 import streamlit as st
-import os
-import google.generativeai as genai
-from PIL import Image
-import io
-from dotenv import load_dotenv
-import json
-import numpy as np
+from yaml.loader import SafeLoader
+import streamlit_authenticator as stauth
+from streamlit_authenticator.utilities import (CredentialsError,
+                                               ForgotError,
+                                               Hasher,
+                                               LoginError,
+                                               RegisterError,
+                                               ResetError,
+                                               UpdateError)
 
-# Load environment variables
-load_dotenv()
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-if not GOOGLE_API_KEY:
-    raise ValueError("GOOGLE_API_KEY not found in environment variables")
+# Loading config file
+with open('config.yaml', 'r', encoding='utf-8') as file:
+    config = yaml.load(file, Loader=SafeLoader)
 
-genai.configure(api_key=GOOGLE_API_KEY)
+# Display logo and version
+st.metric('Version', '0.4.1')
 
-class NutritionAnalyzer:
-    def __init__(self):
-        self.model = genai.GenerativeModel("gemini-1.5-flash")
-        self.thresholds = {
-            "calories": 300,
-            "sugar": 25,
-            "saturated_fat": 5,
-            "sodium": 600,
-            "protein": 5
-        }
-    
-    def preprocess_image(self, image_file):
-        try:
-            image = Image.open(image_file)
-            # Convert to RGB if necessary
-            if image.mode not in ('RGB', 'L'):
-                image = image.convert('RGB')
-            # Resize if too large
-            max_size = 1024
-            if max(image.size) > max_size:
-                ratio = max_size / max(image.size)
-                new_size = tuple(int(dim * ratio) for dim in image.size)
-                image = image.resize(new_size, Image.Resampling.LANCZOS)
-            return image
-        except Exception as e:
-            raise ValueError(f"Error processing image: {str(e)}")
+# Display credentials (for debugging purposes)
+st.code(f"""
+Credentials:
 
-    def extract_nutrition_info(self, image):
-        prompt = """
-        Analyze this nutrition label and extract the following information in JSON format:
-        {
-            "calories": number,
-            "protein": number (in grams),
-            "carbohydrates": number (in grams),
-            "sugar": number (in grams),
-            "fat": number (in grams),
-            "saturated_fat": number (in grams),
-            "sodium": number (in mg),
-            "fiber": number (in grams),
-            "serving_size": string
-        }
-        Only include numerical values, no units in the numbers.
-        """
-        
-        try:
-            response = self.model.generate_content([image, prompt])
-            # Extract JSON from response
-            json_str = response.text.strip('`').strip()
-            if json_str.startswith('json'):
-                json_str = json_str[4:]
-            return json.loads(json_str)
-        except Exception as e:
-            raise ValueError(f"Error analyzing image: {str(e)}")
+First name: {config['credentials']['usernames']['jsmith']['first_name']}
+Last name: {config['credentials']['usernames']['jsmith']['last_name']}
+Username: jsmith
+Password: {'abc' if 'pp' not in config['credentials']['usernames']['jsmith'].keys() else config['credentials']['usernames']['jsmith']['pp']}
 
-    def calculate_health_score(self, nutrition_data):
-        scores = {
-            "calories": 1 if nutrition_data.get("calories", 0) <= self.thresholds["calories"] else 0,
-            "sugar": 1 if nutrition_data.get("sugar", 0) <= self.thresholds["sugar"] else 0,
-            "saturated_fat": 1 if nutrition_data.get("saturated_fat", 0) <= self.thresholds["saturated_fat"] else 0,
-            "sodium": 1 if nutrition_data.get("sodium", 0) <= self.thresholds["sodium"] else 0,
-            "protein": 1 if nutrition_data.get("protein", 0) >= self.thresholds["protein"] else 0
-        }
-        return {
-            "total_score": sum(scores.values()) / len(scores) * 100,
-            "component_scores": scores
-        }
-    def get_analysis_prompt(image_type):
-        if image_type == "Food Label":
-            return """
-            You are an expert nutritionist analyzing a nutrition label. Extract the following information:
-            - Calories (per serving)
-            - Protein (g)
-            - Carbohydrates (g)
-            - Fat (g)
-            - Serving size
-            
-            Respond in JSON format with these exact keys: 
-            {
-                "calories": number,
-                "protein": number,
-                "carbohydrates": number,
-                "fat": number,
-                "serving_size": string
-            }
-            Only provide the JSON data, no additional text.
-            """
-        else:
-            return """
-            You are an expert nutritionist. Analyze this food image and:
-            1. Identify all visible food items
-            2. Estimate portion sizes
-            3. Calculate approximate calories for each item
-            
-            Respond in JSON format:
-            {
-                "food_items": [
-                    {
-                        "name": "item name",
-                        "portion": "portion size",
-                        "calories": number
-                    }
-                ],
-                "total_calories": number
-            }
-            Be specific about portions but don't include disclaimers about estimates.
-            Only provide the JSON data, no additional text.
-            """
+First name: {config['credentials']['usernames']['rbriggs']['first_name']}
+Last name: {config['credentials']['usernames']['rbriggs']['last_name']}
+Username: rbriggs
+Password: {'def' if 'pp' not in config['credentials']['usernames']['rbriggs'].keys() else config['credentials']['usernames']['rbriggs']['pp']}
+"""
+)
 
+# Creating the authenticator object
+authenticator = stauth.Authenticate(
+    config['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days']
+)
 
+# Creating a login widget
+try:
+    name, authentication_status, username = authenticator.login('Login', 'main')
+except LoginError as e:
+    st.error(e)
 
-def analyze_nutrition(image_file, image_type="Food Label"):
-    analyzer = NutritionAnalyzer()
-    
+# Check authentication status
+if st.session_state.get("authentication_status"):
+    st.write('___')
+    authenticator.logout('Logout', 'main')
+    st.write(f'Welcome *{st.session_state["name"]}*')
+    st.title('Some content')
+    st.write('___')
+elif st.session_state.get("authentication_status") is False:
+    st.error('Username/password is incorrect')
+elif st.session_state.get("authentication_status") is None:
+    st.warning('Please enter your username and password')
+
+# Creating a password reset widget
+if st.session_state.get("authentication_status"):
     try:
-        # Preprocess image
-        processed_image = analyzer.preprocess_image(image_file)
-        
-        # Get appropriate prompt
-        prompt = analyzer.get_analysis_prompt(image_type)
-        
-        # Extract nutrition information
-        result = analyzer.extract_nutrition_info(processed_image, prompt)
-        
-        if image_type == "Food Label":
-            return {
-                "nutrition_data": result,
-                "health_score": analyzer.calculate_health_score(result)
-            }
-        else:
-            return {
-                "food_items": result["food_items"],
-                "nutrition_data": {
-                    "calories": result["total_calories"],
-                    "protein": 0,  # These would need estimation
-                    "carbohydrates": 0,
-                    "fat": 0
-                }
-            }
-    except Exception as e:
-        raise ValueError(f"Analysis failed: {str(e)}")
+        if authenticator.reset_password(username):
+            st.success('Password modified successfully')
+            with open('config.yaml', 'w', encoding='utf-8') as file:
+                yaml.dump(config, file, default_flow_style=False)
+    except ResetError as e:
+        st.error(e)
+    except CredentialsError as e:
+        st.error(e)
+    st.write('_If you use the password reset widget, please revert the password to what it was before once you are done._')
 
+# Creating a new user registration widget
+try:
+    (email_of_registered_user,
+     username_of_registered_user,
+     name_of_registered_user) = authenticator.register_user('Register user', preauthorization=False)
+    if email_of_registered_user:
+        st.success('User registered successfully')
+        with open('config.yaml', 'w', encoding='utf-8') as file:
+            yaml.dump(config, file, default_flow_style=False)
+except RegisterError as e:
+    st.error(e)
 
-def generate_recommendations(nutrition_data, health_score):
-    recommendations = []
-    
-    if nutrition_data.get("calories", 0) > 300:
-        recommendations.append("Consider portion control to reduce calorie intake")
-    
-    if nutrition_data.get("sugar", 0) > 25:
-        recommendations.append("High in sugar - try finding alternatives with less added sugar")
-    
-    if nutrition_data.get("saturated_fat", 0) > 5:
-        recommendations.append("High in saturated fat - look for options with healthier fats")
-    
-    if nutrition_data.get("sodium", 0) > 600:
-        recommendations.append("High sodium content - consider low-sodium alternatives")
-    
-    if not recommendations:
-        recommendations.append("This food item fits within healthy nutritional guidelines")
-    
-    return recommendations
+# Creating a forgot password widget
+try:
+    (username_of_forgotten_password,
+     email_of_forgotten_password,
+     new_random_password) = authenticator.forgot_password('Forgot password')
+    if username_of_forgotten_password:
+        st.success(f"New password **'{new_random_password}'** to be sent to user securely")
+        config['credentials']['usernames'][username_of_forgotten_password]['password'] = stauth.Hasher([new_random_password]).generate()[0]
+        with open('config.yaml', 'w', encoding='utf-8') as file:
+            yaml.dump(config, file, default_flow_style=False)
+    elif not username_of_forgotten_password:
+        st.error('Username not found')
+except ForgotError as e:
+    st.error(e)
+
+# Creating a forgot username widget
+try:
+    (username_of_forgotten_username,
+     email_of_forgotten_username) = authenticator.forgot_username('Forgot username')
+    if username_of_forgotten_username:
+        st.success(f"Username **'{username_of_forgotten_username}'** to be sent to user securely")
+    elif not username_of_forgotten_username:
+        st.error('Email not found')
+except ForgotError as e:
+    st.error(e)
+
+# Creating an update user details widget
+if st.session_state.get("authentication_status"):
+    try:
+        if authenticator.update_user_details(username):
+            st.success('Entries updated successfully')
+            with open('config.yaml', 'w', encoding='utf-8') as file:
+                yaml.dump(config, file, default_flow_style=False)
+    except UpdateError as e:
+        st.error(e)
